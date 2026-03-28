@@ -2,7 +2,7 @@
   "name": "glitchtip-poc",
   "private": true,
   "version": "1.0.0",
-  "description": "Proof-of-concept for GlitchTip project access checks without CVE assignment",
+  "description": "Proof-of-concept for GlitchTip session authorization bypass (fixed in v6.1.7)",
   "main": "glitchtip-poc.ts",
   "scripts": {
     "start": "ts-node glitchtip-poc.ts"
