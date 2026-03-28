@@ -1,6 +1,6 @@
 # GlitchTip authorization bypass PoC
 
-This PoC documents and reproduces the GlitchTip authorization mismatch identified in the local audit material under `C:\GitHub\glitchtip-issues` (`SECURITY_AUDIT.md` and `SECURITY_POCS.md`, issue `GTSEC-001` in those notes).
+This PoC documents and reproduces an authorization mismatch in GlitchTip.
 
 ## Vulnerability summary
 
@@ -13,6 +13,8 @@ In practical terms, a low-privilege member session may succeed on project mutati
 
 - **2026-06-03**: issue discovered
 - **2026-06-03**: issue reported to maintainer (same day)
+- **2026-06-04**: patch merged (MR !2377 / commit `1c5c6d55d49bc9a61902864a489b21cc690377ea`)
+- **2026-06-04**: patch released in `v6.1.7`
 
 ## Fix and references
 
