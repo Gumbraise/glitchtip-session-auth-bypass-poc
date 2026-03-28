@@ -2,19 +2,38 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 const DEFAULT_BASE_URL = "http://localhost:8000";
+
 const ACTIONS = [
     { label: "GET project", value: "GET" },
     { label: "PUT project", value: "PUT" },
     { label: "DELETE project", value: "DELETE" },
-];
+] as const;
+
 const UPDATE_FIELDS = [
     { label: "Title / name", value: "name" },
     { label: "Slug", value: "slug" },
     { label: "Platform", value: "platform" },
-];
+] as const;
 
-function parseArgs(argv) {
-    const args = {};
+type ActionMethod = (typeof ACTIONS)[number]["value"];
+type UpdateField = (typeof UPDATE_FIELDS)[number]["value"];
+
+type ParsedArgs = Record<string, string | boolean>;
+
+type RequestConfig = {
+    method: ActionMethod;
+    baseUrl: string;
+    organizationSlug: string;
+    projectSlug: string;
+    token: string;
+    sessionId: string;
+    csrfToken: string;
+    updateField: UpdateField | null;
+    updateValue: string | null;
+};
+
+function parseArgs(argv: string[]): ParsedArgs {
+    const args: ParsedArgs = {};
 
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
@@ -24,7 +43,7 @@ function parseArgs(argv) {
         }
 
         const [rawKey, inlineValue] = arg.slice(2).split("=", 2);
-        const key = rawKey.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+        const key = rawKey.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
         if (inlineValue !== undefined) {
             args[key] = inlineValue;
@@ -44,19 +63,30 @@ function parseArgs(argv) {
     return args;
 }
 
-function normalizeBaseUrl(value) {
+function getArgString(args: ParsedArgs, key: string): string | undefined {
+    const value = args[key];
+    return typeof value === "string" ? value : undefined;
+}
+
+function normalizeBaseUrl(value: string): string {
     return value.replace(/\/$/, "");
 }
 
-function projectPath(organizationSlug, projectSlug) {
+function projectPath(organizationSlug: string, projectSlug: string): string {
     return `/api/0/projects/${encodeURIComponent(organizationSlug)}/${encodeURIComponent(projectSlug)}/`;
 }
 
-function createSessionHeaders({ sessionId, csrfToken, baseUrl }) {
-    const headers = {
-        Cookie: csrfToken
-            ? `sessionid=${sessionId}; csrftoken=${csrfToken}`
-            : `sessionid=${sessionId}`,
+function createSessionHeaders({
+    sessionId,
+    csrfToken,
+    baseUrl,
+}: {
+    sessionId: string;
+    csrfToken: string;
+    baseUrl: string;
+}): Record<string, string> {
+    const headers: Record<string, string> = {
+        Cookie: csrfToken ? `sessionid=${sessionId}; csrftoken=${csrfToken}` : `sessionid=${sessionId}`,
     };
 
     if (csrfToken) {
@@ -68,7 +98,11 @@ function createSessionHeaders({ sessionId, csrfToken, baseUrl }) {
     return headers;
 }
 
-async function prompt(rl, message, { defaultValue, required = true } = {}) {
+async function prompt(
+    rl: readline.Interface | null,
+    message: string,
+    { defaultValue, required = true }: { defaultValue?: string; required?: boolean } = {},
+): Promise<string> {
     if (!rl) {
         if (defaultValue !== undefined) {
             return defaultValue;
@@ -101,7 +135,11 @@ async function prompt(rl, message, { defaultValue, required = true } = {}) {
     }
 }
 
-async function choose(rl, message, choices) {
+async function choose<T extends ReadonlyArray<{ label: string; value: string }>>(
+    rl: readline.Interface | null,
+    message: string,
+    choices: T,
+): Promise<T[number]> {
     if (!rl) {
         throw new Error(`Missing ${message.toLowerCase()}.`);
     }
@@ -123,12 +161,12 @@ async function choose(rl, message, choices) {
     }
 }
 
-function resolveMethod(value) {
+function resolveMethod(value: string | undefined): ActionMethod | null {
     const normalized = value?.toUpperCase();
-    return ACTIONS.some((action) => action.value === normalized) ? normalized : null;
+    return ACTIONS.some((action) => action.value === normalized) ? (normalized as ActionMethod) : null;
 }
 
-function resolveUpdateField(value) {
+function resolveUpdateField(value: string | undefined): UpdateField | null {
     const normalized = value?.toLowerCase();
     if (!normalized) {
         return null;
@@ -142,18 +180,19 @@ function resolveUpdateField(value) {
         return normalized;
     }
 
-    return UPDATE_FIELDS.find((item) => item.label.toLowerCase() === normalized)?.value ?? null;
+    const fromLabel = UPDATE_FIELDS.find((item) => item.label.toLowerCase() === normalized)?.value;
+    return fromLabel ?? null;
 }
 
-function buildPayload(method, field, value) {
-    if (method !== "PUT" || !field) {
+function buildPayload(method: ActionMethod, field: UpdateField | null, value: string | null): Record<string, string> | undefined {
+    if (method !== "PUT" || !field || value === null) {
         return undefined;
     }
 
     return { [field]: value };
 }
 
-function formatBody(text) {
+function formatBody(text: string): string {
     if (!text) {
         return "<empty>";
     }
@@ -165,7 +204,19 @@ function formatBody(text) {
     }
 }
 
-async function sendRequest({ baseUrl, method, path, headers, body }) {
+async function sendRequest({
+    baseUrl,
+    method,
+    path,
+    headers,
+    body,
+}: {
+    baseUrl: string;
+    method: ActionMethod;
+    path: string;
+    headers: Record<string, string>;
+    body?: string;
+}): Promise<{ status: number; statusText: string; body: string }> {
     const response = await fetch(`${baseUrl}${path}`, {
         method,
         headers,
@@ -179,30 +230,30 @@ async function sendRequest({ baseUrl, method, path, headers, body }) {
     };
 }
 
-async function resolveConfig(args, rl) {
-    const method = resolveMethod(args.method) ?? (await choose(rl, "Choose an action", ACTIONS)).value;
-    const baseUrl = normalizeBaseUrl(args.url ?? (await prompt(rl, "Base URL", { defaultValue: DEFAULT_BASE_URL })));
-    const organizationSlug = args.org ?? (await prompt(rl, "Organization slug"));
-    const projectSlug = args.project ?? (await prompt(rl, "Project slug"));
-    const token = args.token ?? (await prompt(rl, "Bearer token"));
-    const sessionId = args.sessionId ?? (await prompt(rl, "Session ID"));
-    const csrfToken = args.csrfToken ?? (await prompt(rl, "CSRF token", { required: false }));
+async function resolveConfig(args: ParsedArgs, rl: readline.Interface | null): Promise<RequestConfig> {
+    const method = resolveMethod(getArgString(args, "method")) ?? (await choose(rl, "Choose an action", ACTIONS)).value;
+    const baseUrl = normalizeBaseUrl(getArgString(args, "url") ?? (await prompt(rl, "Base URL", { defaultValue: DEFAULT_BASE_URL })));
+    const organizationSlug = getArgString(args, "org") ?? (await prompt(rl, "Organization slug"));
+    const projectSlug = getArgString(args, "project") ?? (await prompt(rl, "Project slug"));
+    const token = getArgString(args, "token") ?? (await prompt(rl, "Bearer token"));
+    const sessionId = getArgString(args, "sessionId") ?? (await prompt(rl, "Session ID"));
+    const csrfToken = getArgString(args, "csrfToken") ?? (await prompt(rl, "CSRF token", { required: false }));
 
-    let updateField = null;
-    let updateValue = null;
+    let updateField: UpdateField | null = null;
+    let updateValue: string | null = null;
 
     if (method === "PUT") {
-        const field = resolveUpdateField(args.field) ?? (await choose(rl, "What do you want to change?", UPDATE_FIELDS)).value;
+        const field = resolveUpdateField(getArgString(args, "field")) ?? (await choose(rl, "What do you want to change?", UPDATE_FIELDS)).value;
         updateField = resolveUpdateField(field) ?? field;
 
         if (updateField === "name") {
-            updateValue = args.title ?? args.name ?? (await prompt(rl, "New project title"));
+            updateValue = getArgString(args, "title") ?? getArgString(args, "name") ?? (await prompt(rl, "New project title"));
         } else if (updateField === "slug") {
-            updateValue = args.newSlug ?? args.slug ?? (await prompt(rl, "New project slug"));
+            updateValue = getArgString(args, "newSlug") ?? getArgString(args, "slug") ?? (await prompt(rl, "New project slug"));
         } else if (updateField === "platform") {
-            updateValue = args.platform ?? (await prompt(rl, "New project platform"));
+            updateValue = getArgString(args, "platform") ?? (await prompt(rl, "New project platform"));
         } else {
-            updateValue = args.value ?? (await prompt(rl, "New value"));
+            updateValue = getArgString(args, "value") ?? (await prompt(rl, "New value"));
         }
     }
 
@@ -219,21 +270,21 @@ async function resolveConfig(args, rl) {
     };
 }
 
-function printResponse(label, response) {
+function printResponse(label: string, response: { status: number; statusText: string; body: string }): void {
     console.log(`\n[${label}]`);
     console.log(`Status: ${response.status} ${response.statusText}`);
     console.log(`Body:\n${response.body}`);
 }
 
-async function main() {
+async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2));
 
     if (args.help) {
         console.log(`Usage:
-  node index.mjs [--url URL] [--org ORG] [--project PROJECT] [--token TOKEN]
-                 [--session-id SESSION] [--csrf-token TOKEN]
-                 [--method GET|PUT|DELETE] [--field title|slug|platform]
-                 [--title VALUE] [--name VALUE] [--slug VALUE] [--platform VALUE]
+  ts-node glitchtip-poc.ts [--url URL] [--org ORG] [--project PROJECT] [--token TOKEN]
+                           [--session-id SESSION] [--csrf-token TOKEN]
+                           [--method GET|PUT|DELETE] [--field title|slug|platform]
+                           [--title VALUE] [--name VALUE] [--slug VALUE] [--platform VALUE]
 
 Missing values are requested interactively when a TTY is available.
 `);
@@ -247,7 +298,7 @@ Missing values are requested interactively when a TTY is available.
         const config = await resolveConfig(args, rl);
         const path = projectPath(config.organizationSlug, config.projectSlug);
         const body = buildPayload(config.method, config.updateField, config.updateValue);
-        const jsonHeaders = body ? { "Content-Type": "application/json" } : {};
+        const jsonHeaders: Record<string, string> = body ? { "Content-Type": "application/json" } : {};
 
         console.log("\nProject target:", `${config.baseUrl}${path}`);
         console.log("Action:", config.method);
@@ -307,7 +358,8 @@ Missing values are requested interactively when a TTY is available.
     }
 }
 
-main().catch((error) => {
-    console.error("PoC failed:", error.message);
+main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("PoC failed:", message);
     process.exitCode = 1;
 });

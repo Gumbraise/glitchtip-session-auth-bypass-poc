@@ -1,8 +1,19 @@
 {
-  "name": "gtsec-001-poc",
+  "name": "glitchtip-poc",
   "private": true,
-  "type": "module",
+  "version": "1.0.0",
+  "description": "Proof-of-concept for GlitchTip project access checks without CVE assignment",
+  "main": "glitchtip-poc.ts",
   "scripts": {
-    "start": "node index.mjs"
+    "start": "ts-node glitchtip-poc.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
