@@ -1,0 +1,8 @@
+{
+  "name": "gtsec-001-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  }
+}
